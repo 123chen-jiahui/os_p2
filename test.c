@@ -6,6 +6,7 @@
 #include "lib.h"
 
 extern struct block *first_block;
+extern struct block *first_mmap_block;
 const char COLOR_GREEN[] = "\033[0;32m";
 const char COLOR_RESET[] = "\033[0m";
 // const char COLOR_RED[] = "\033[0;31m";
@@ -29,7 +30,9 @@ int assert_equals_int(char *msg, int expected, int actual) {
 int show_info() {
 	printf("\ninfo start:\n");
 	int count = 0;
+	int m_count = 0;
 	struct block *b = first_block;
+	struct block *mb = first_mmap_block;
 	if (b == NULL) {
 		printf("info: heap is empty\n");
 		printf("info end\n");
@@ -42,6 +45,11 @@ int show_info() {
 			printf("info: the %dth block is in use and the size is %ld\n", ++count, b->size);
 		}
 		b = b->next;
+	}
+	printf("mmap block info:\n");
+	while (mb != NULL) {
+		printf("block %d, size %ld\n", ++m_count, mb->size);
+		mb = mb->next;
 	}
 	printf("info end\n");
 	return count;
@@ -320,6 +328,87 @@ int test_calloc() {
 	return 1;
 }
 
+int test_big_memory_1() {
+	int *a = (int *)my_malloc(0, sizeof(int) * (1 << 16));
+	if (a == NULL)
+		return 0;
+	memset(a, 0, sizeof(a));
+	if (!assert_equals_int("block_num", 0, show_info()))
+		return 0;
+	if (!assert_equals_int("free_result", 1, my_free(a)))
+		return 0;
+	return 1;
+}
+
+int test_big_memory_2(int mode) {
+	int *a[100];
+	int *b[10];
+	for (int i = 0; i < 100; i ++) {
+		a[i] = (int *)my_malloc(mode, sizeof(int) * 10);
+		memset(a[i], 0, sizeof(a[i]));
+	}
+	for (int i = 0; i < 10; i ++) {
+		b[i] = (int *)my_malloc(mode, sizeof(int) * (1 << 16));
+		if (b[i] == NULL)
+			return 0;
+		memset(b[i], 0, sizeof(b[i]));
+	}
+	if (!assert_equals_int("block_num", 100, show_info()))
+		return 0;
+	for (int i = 0; i < 100; i ++)
+		my_free(a[i]);
+	for (int i = 0; i < 10; i ++) {
+		if (!assert_equals_int("free_result", 1, my_free(b[i])))
+			return 0;
+	}
+	return 1;
+}
+
+int test_big_memory_3() {
+	srand((int)time(0));
+	int *b[10];
+	int index[10];
+	memset(index, 0, sizeof(index));
+	for (int i = 0; i < 10; i ++) {
+		b[i] = (int *)my_malloc(0, sizeof(int) * (1 << 16));
+		if (b[i] == NULL)
+			return 0;
+		memset(b[i], 0, sizeof(b[i]));
+	}
+	if (!assert_equals_int("block_num", 0, show_info()))
+		return 0;
+	int count = 0;
+	while (count < 10) {
+		int t = rand() % 10;
+		if (index[t] == 0) {
+			if (!assert_equals_int("free_result", 1, my_free(b[t])))
+				return 0;
+			index[t] = 1;
+			count ++;
+		}
+	}
+	return 1;
+}
+
+int test_big_memory() {
+	if (!test_big_memory_1()) {
+		printf("test_big_memory_1 failed.\n");
+		return 0;
+	}
+	for (int i = 0; i < 2; i ++) {
+		if (!test_big_memory_2(i)) {
+			printf("test_big_memory_2 failed(%s).\n", str[i]);
+			return 0;
+		}
+	}	
+	if (!test_big_memory_3()) {
+		printf("test_big_memory_3 failed.\n");
+		return 0;
+	}
+	return 1;
+}
+
+
 int main() {
 	printf("Testing start...\n");
 	if (!test_and_print("test_simple_malloc", test_simple_malloc)) {
@@ -335,6 +424,9 @@ int main() {
 		return 0;
 	}
 	if (!test_and_print("test_calloc", test_calloc)) {
+		return 0;
+	}
+	if (!test_and_print("test_big_memory", test_big_memory)) {
 		return 0;
 	}
 	printf("\n%sAll tests passed!%s\n", COLOR_GREEN, COLOR_RESET);
